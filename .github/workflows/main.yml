@@ -1,0 +1,61 @@
+name: EPG Merger
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  update-epg:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 确保有写入权限
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install requests
+    
+    - name: Run EPG merger script
+      run: |
+        python epg_merger.py
+    
+    - name: Configure git
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+    
+    - name: Check for changes
+      id: check_changes
+      run: |
+        if [[ -n "$(git status --porcelain)" ]]; then
+          echo "changes=true" >> $GITHUB_OUTPUT
+        else
+          echo "changes=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Pull latest changes and rebase
+      if: steps.check_changes.outputs.changes == 'true'
+      run: |
+        git fetch origin main
+        git rebase origin/main || true  # 如果有冲突，继续执行
+    
+    - name: Commit and push
+      if: steps.check_changes.outputs.changes == 'true'
+      run: |
+        git add epg.xml
+        git commit -m "Automated EPG Update" || echo "No changes to commit"
+        git push origin HEAD:main --force-with-lease
